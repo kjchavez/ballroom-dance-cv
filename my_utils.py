@@ -2,7 +2,7 @@ import numpy as np
 import scipy.ndimage.filters as filters
 import scipy.ndimage.morphology as morphology
 
-def detect_local_maxima(arr,radius):
+def detect_local_maxima(arr):
 	# radius is (dx,dy,dt)
     # http://stackoverflow.com/questions/3684484/peak-detection-in-a-2d-array/3689710#3689710
     """
@@ -13,8 +13,8 @@ def detect_local_maxima(arr,radius):
     # define an connected neighborhood
     # http://www.scipy.org/doc/api_docs/SciPy.ndimage.morphology.html#generate_binary_structure
     neighborhood = morphology.generate_binary_structure(len(arr.shape),2)
-    neighborhood = np.ones(radius)
-    print neighborhood
+    #neighborhood = np.ones(radius)
+    #print neighborhood
     # apply the local maximum filter; all locations of maximum value 
     # in their neighborhood are set to 1
     # http://www.scipy.org/doc/api_docs/SciPy.ndimage.filters.html#maximum_filter
@@ -36,4 +36,7 @@ def detect_local_maxima(arr,radius):
     # we obtain the final mask, containing only peaks, 
     # by removing the background from the local_min mask
     detected_maxima = local_max - eroded_background
-    return np.array(np.where(detected_maxima))       
+
+    # Find standard deviation and use as filter
+    H = np.std(arr)
+    return np.array(np.where(np.logical_and(detected_maxima,arr > 2*H)))       

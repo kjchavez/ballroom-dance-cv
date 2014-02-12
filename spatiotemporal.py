@@ -55,9 +55,11 @@ w = 4. / tau
 heven= -np.cos(2*np.pi*t*w)*np.exp(-np.square(t)/(tau**2))
 hodd = -np.sin(2*np.pi*t*w)*np.exp(-np.square(t)/(tau**2))
 
-# Convolve along time dimension
+# Convolve along time dimension, note that using 'nearest' avoids high
+# values of R along the beginning/end of the clip
 print "starting even convolution"
 even = scipy.ndimage.convolve1d(blur,heven,axis=2,mode='nearest',origin=0)
+
 print "starting odd convolution"
 odd = scipy.ndimage.convolve1d(blur,hodd,axis=2,mode='nearest',origin=0)
 R = np.square(even) + np.square(odd)
@@ -78,11 +80,10 @@ for i in range(clip_length):
 	plt.savefig(os.path.join(dirname,'frame-%0d.png'%i))
 	print "Frame %d, max %f, min %f" % (i, np.max(R[:,:,i]),np.min(R[:,:,i]))
 
-#sys.exit()
 # Now we need to find the local maxima of the response function to identify
 # spatial-temporal points of interest
-local_max = np.array(detect_local_maxima(R,(2*sigma,2*sigma,3)))
-print local_max
+local_max = np.array(detect_local_maxima(R))
+print local_max.shape
 
 overlay = np.zeros(clip.shape)
 max_x = overlay.shape[0]
@@ -91,18 +92,22 @@ print "drawing rectangles"
 print local_max.shape
 
 #num = 50000
-thresh = 500
+#thresh = 100
 # Sort points by descending value of R and take those above 'threshold'
 interest_points = sorted([local_max[:,i] for i in range(local_max.shape[1])],key = lambda ip: R[ip[0],ip[1],ip[2]],reverse=True)
 R_sorted = np.array([R[ip[0],ip[1],ip[2]] for ip in interest_points])
-cutoff = np.argwhere(R_sorted < thresh)[0]
-print R_sorted
-interest_points = np.array(interest_points[0:cutoff]).T
+plt.figure()
+plt.hist(R_sorted,bins=50)
+plt.savefig(os.path.join(dirname,'local-max-hist.png'))
+#cutoff = np.argwhere(R_sorted < thresh)[0]
+interest_points = np.array(interest_points).T
 print interest_points.shape
 
 # And now sort by time to display in video
 interest_points = interest_points[:,np.argsort(interest_points[2,:])]
-
+with open('interest_points.pkl','w') as fid:
+	cPickle.dump(interest_points,fid)
+	
 #stclip = STClip(clip)
 #stclip.interest_points = interest_points
 #stclip.save('2000pt-repr.pkl')
@@ -120,17 +125,28 @@ interest_points = interest_points[:,np.argsort(interest_points[2,:])]
 
 
 print clip.shape
-raw_input("Press Enter to run clip...")
+
 tracker = 0
-max_x = clip.shape[0]
-max_y = clip.shape[1]
+max_x = clip.shape[0]-1
+max_y = clip.shape[1]-1
 for i in range(clip_length):
-	frame = np.array(clip[:,:,i],dtype=np.uint8)
+	#frame = np.array(clip[:,:,i],dtype=np.uint8)
 	while(tracker < interest_points.shape[1] and interest_points[2,tracker] == i):
 		x,y,t = interest_points[:,tracker]
-		cv2.rectangle(frame,(max(y-sigma,0),max(x-sigma,0)),(min(y+sigma,max_y),min(x+sigma,max_x)),255,thickness=2)
+		xb,xt = (max(x-sigma,0),min(x+sigma,max_x))
+		yb,yt = (max(y-sigma,0),min(y+sigma,max_y))
+		for t in range(max(0,i-5),min(clip_length-1,i+5)):
+			clip[max(x-sigma,0):min(x+sigma,max_x),max(y-sigma,0):min(y+sigma,max_y),t] = 0
+			#print "render rect"
+			#print (max(y-sigma,0),max(x-sigma,0)),(min(y+sigma,max_y),min(x+sigma,max_x))
+			#frame = clip[:,:,t]
+			#cv2.rectangle(frame,(max(x-sigma,0),max(y-sigma,0)),(min(x+sigma,max_x),min(y+sigma,max_y)),0,thickness=2)
+			#clip[:,:,t] = frame
 		tracker = tracker+1
-		
+
+raw_input("Press Enter to run clip...")
+for i in range(clip_length):
+	frame = np.array(clip[:,:,i],dtype=np.uint8)
 	cv2.imshow("window",frame)
 	k = cv2.waitKey(33)
 	if k == 1048689: # apparently this is 'q'
