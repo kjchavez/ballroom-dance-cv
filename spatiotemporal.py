@@ -7,8 +7,9 @@ from my_utils import *
 import cPickle
 
 class STClip(object):
-	def __init__(self,frames):
-		self.frames = frames
+	def __init__(self,start_frame,end_frame):
+		self.start_frame = start_frame
+		self.end_frame = end_frame
 		self.interest_points = None
 
 	def save(self,filename):
@@ -46,7 +47,6 @@ for i in range(clip_length):
 	#gs_frame = cv2.resize(cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY),(clip.shape[1],clip.shape[0]))
 	gs_frame = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
 	clip[:,:,i] = gs_frame
-	#blur[:,:,i] = cv2.Sobel(gs_frame,cv2.CV_32F,1,1)
 	blur[:,:,i] = cv2.GaussianBlur(gs_frame,(0,0),sigma)
 	
 # 1D Gabor filters
@@ -91,15 +91,13 @@ max_y = overlay.shape[1]
 print "drawing rectangles"
 print local_max.shape
 
-#num = 50000
-#thresh = 100
-# Sort points by descending value of R and take those above 'threshold'
+
 interest_points = sorted([local_max[:,i] for i in range(local_max.shape[1])],key = lambda ip: R[ip[0],ip[1],ip[2]],reverse=True)
 R_sorted = np.array([R[ip[0],ip[1],ip[2]] for ip in interest_points])
 plt.figure()
 plt.hist(R_sorted,bins=50)
 plt.savefig(os.path.join(dirname,'local-max-hist.png'))
-#cutoff = np.argwhere(R_sorted < thresh)[0]
+
 interest_points = np.array(interest_points).T
 print interest_points.shape
 
@@ -129,14 +127,18 @@ print clip.shape
 tracker = 0
 max_x = clip.shape[0]-1
 max_y = clip.shape[1]-1
+thickness = 1
 for i in range(clip_length):
 	#frame = np.array(clip[:,:,i],dtype=np.uint8)
 	while(tracker < interest_points.shape[1] and interest_points[2,tracker] == i):
 		x,y,t = interest_points[:,tracker]
 		xb,xt = (max(x-sigma,0),min(x+sigma,max_x))
 		yb,yt = (max(y-sigma,0),min(y+sigma,max_y))
-		for t in range(max(0,i-5),min(clip_length-1,i+5)):
-			clip[max(x-sigma,0):min(x+sigma,max_x),max(y-sigma,0):min(y+sigma,max_y),t] = 0
+		for t in range(max(0,i-0),min(clip_length-1,i+5)):
+			clip[xb:(xb+thickness),yb:yt,t] = 0
+			clip[xb:xt,yb:(yb+thickness),t] = 0
+			clip[(xt-thickness):xt,yb:yt,t] = 0
+			clip[xb:xt,(yt-thickness):yt,t] = 0
 			#print "render rect"
 			#print (max(y-sigma,0),max(x-sigma,0)),(min(y+sigma,max_y),min(x+sigma,max_x))
 			#frame = clip[:,:,t]
