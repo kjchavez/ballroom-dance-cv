@@ -5,9 +5,11 @@ import cv2
 import matplotlib.pyplot as plt
 from my_utils import *
 import cPickle
+import argparse
 
-class STClip(object):
-	def __init__(self,start_frame,end_frame):
+class ClipST(object):
+	def __init__(self,video_file,start_frame,end_frame):
+		self.video_file = video_file
 		self.start_frame = start_frame
 		self.end_frame = end_frame
 		self.interest_points = None
@@ -21,137 +23,104 @@ class STClip(object):
 			clip = cPickle.load(fid)
 		return clip
 
-# Capture video
-video = cv2.VideoCapture()
-success = video.open('../Dataset/person15_handwaving_d1_uncomp.avi')
-my_window = cv2.namedWindow('Test')
+def main():
+	parser = argparse.ArgumentParser(description='Collect spatial-temporal interest points for a clip')
+	parser.add_argument('filename', metavar='F', type=str,
+					   help='video filename (avi, mp4 format)')
+	parser.add_argument('start', metavar='S', type=int,
+					   help='start frame',default=0)
+	parser.add_argument('end', metavar='E', type=int,
+					   help='end frame',default=300)
+	parser.add_argument('-o','--sigma', metavar='O', type=int,
+					   help='spatial convolution scale',default=4)
+	parser.add_argument('-t','--tau', metavar='T', type=float,
+					   help='temporal convolution scale',default=16.)
+	parser.add_argument('-w','--width', metavar='W', type=int,
+					   help='force width of video',default=-1)
+	parser.add_argument('-g','--height', metavar='H', type=int,
+					   help='force height of video',default=-1)
+	parser.add_argument('-r','--save-R',dest='save_R',action='store_true',
+					   help='save a video of the response function',default=False)				
 
-# Parameters of spatial and temporal range
-sigma = 4 # pixels
-tau = 16. # frames
-clip_length = 300 #frames
+	args = parser.parse_args()
 
-f,frame = video.read()
-# Full 3-tensor representation of video clip
-clip = np.zeros((frame.shape[0],frame.shape[1],clip_length))
-blur = np.zeros(clip.shape)
-
-# Skip the first 300 frames
-video.set(1,30*0)
-
-# Get a short clip
-for i in range(clip_length):
-	frame_available, frame = video.read()
-	if not frame_available:
-		break
-	#gs_frame = cv2.resize(cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY),(clip.shape[1],clip.shape[0]))
-	gs_frame = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-	clip[:,:,i] = gs_frame
-	blur[:,:,i] = cv2.GaussianBlur(gs_frame,(0,0),sigma)
+	# Capture video
+	video = cv2.VideoCapture()
+	success = video.open(args.filename)
+	#my_window = cv2.namedWindow('Test')
 	
-# 1D Gabor filters
-t = np.arange(-2*(tau**2),2*(tau**2))
-w = 4. / tau
-heven= -np.cos(2*np.pi*t*w)*np.exp(-np.square(t)/(tau**2))
-hodd = -np.sin(2*np.pi*t*w)*np.exp(-np.square(t)/(tau**2))
+	# Parameters of spatial and temporal range
+	clip_length = args.end - args.start #frames
+	assert(clip_length > 0)
 
-# Convolve along time dimension, note that using 'nearest' avoids high
-# values of R along the beginning/end of the clip
-print "starting even convolution"
-even = scipy.ndimage.convolve1d(blur,heven,axis=2,mode='nearest',origin=0)
+	clip_st = ClipST(args.filename,args.start,args.end)
+	clip_st.sigma = args.sigma
+	clip_st.tau = args.tau
 
-print "starting odd convolution"
-odd = scipy.ndimage.convolve1d(blur,hodd,axis=2,mode='nearest',origin=0)
-R = np.square(even) + np.square(odd)
-
-# Center weighting for response function
-#enter = clip.shape[1]/2
-#width = clip.shape[1]/4
-#y = np.arange(clip.shape[1],dtype=float)
-#for i in range(clip_length):
-#	R[:,:,i] = R[:,:,i] * np.dot(np.ones((clip.shape[0],1)),np.exp(-(y-center)**2/(width**2)).reshape(1,clip.shape[1]))
-
-# Save a video of R
-dirname = 'R-%s'%time.strftime("%d-%m-%y-%H-%M")
-os.makedirs(dirname)
-for i in range(clip_length):
-	plt.figure()
-	plt.imshow(R[:,:,i])
-	plt.savefig(os.path.join(dirname,'frame-%0d.png'%i))
-	print "Frame %d, max %f, min %f" % (i, np.max(R[:,:,i]),np.min(R[:,:,i]))
-
-# Now we need to find the local maxima of the response function to identify
-# spatial-temporal points of interest
-local_max = np.array(detect_local_maxima(R))
-print local_max.shape
-
-overlay = np.zeros(clip.shape)
-max_x = overlay.shape[0]
-max_y = overlay.shape[1]
-print "drawing rectangles"
-print local_max.shape
-
-
-interest_points = sorted([local_max[:,i] for i in range(local_max.shape[1])],key = lambda ip: R[ip[0],ip[1],ip[2]],reverse=True)
-R_sorted = np.array([R[ip[0],ip[1],ip[2]] for ip in interest_points])
-plt.figure()
-plt.hist(R_sorted,bins=50)
-plt.savefig(os.path.join(dirname,'local-max-hist.png'))
-
-interest_points = np.array(interest_points).T
-print interest_points.shape
-
-# And now sort by time to display in video
-interest_points = interest_points[:,np.argsort(interest_points[2,:])]
-with open('interest_points.pkl','w') as fid:
-	cPickle.dump(interest_points,fid)
-	
-#stclip = STClip(clip)
-#stclip.interest_points = interest_points
-#stclip.save('2000pt-repr.pkl')
-
-#for i in range(1,local_max.shape[1],100):
-#	x,y,t = local_max[:,i]
-#	for tprime in range(max(int(t-tau),0),min(int(t+tau),clip_length)):
-#		cv2.rectangle(overlay[:,:,tprime],(x-sigma,x+sigma),(y-sigma,y+sigma),255,thickness=2)
-
-# Let's visualize these interest points
-#composite = np.minimum(clip + overlay,255)
-#with open('composite.pkl','w') as FILE:
-#	cPickle.dump(composite,FILE)
-#print "saved"
-
-
-print clip.shape
-
-tracker = 0
-max_x = clip.shape[0]-1
-max_y = clip.shape[1]-1
-thickness = 1
-for i in range(clip_length):
-	#frame = np.array(clip[:,:,i],dtype=np.uint8)
-	while(tracker < interest_points.shape[1] and interest_points[2,tracker] == i):
-		x,y,t = interest_points[:,tracker]
-		xb,xt = (max(x-sigma,0),min(x+sigma,max_x))
-		yb,yt = (max(y-sigma,0),min(y+sigma,max_y))
-		for t in range(max(0,i-0),min(clip_length-1,i+5)):
-			clip[xb:(xb+thickness),yb:yt,t] = 0
-			clip[xb:xt,yb:(yb+thickness),t] = 0
-			clip[(xt-thickness):xt,yb:yt,t] = 0
-			clip[xb:xt,(yt-thickness):yt,t] = 0
-			#print "render rect"
-			#print (max(y-sigma,0),max(x-sigma,0)),(min(y+sigma,max_y),min(x+sigma,max_x))
-			#frame = clip[:,:,t]
-			#cv2.rectangle(frame,(max(x-sigma,0),max(y-sigma,0)),(min(x+sigma,max_x),min(y+sigma,max_y)),0,thickness=2)
-			#clip[:,:,t] = frame
-		tracker = tracker+1
-
-raw_input("Press Enter to run clip...")
-for i in range(clip_length):
-	frame = np.array(clip[:,:,i],dtype=np.uint8)
-	cv2.imshow("window",frame)
-	k = cv2.waitKey(33)
-	if k == 1048689: # apparently this is 'q'
-		cv2.destroyAllWindows()
+	# Full 3-tensor representation of video clip
+	if args.width < 0 and args.height < 0:
+		f,frame = video.read()
+		clip = np.zeros((frame.shape[0],frame.shape[1],clip_length))
+		clip_st.width = frame.shape[0]
+		clip_st.height = frame.shape[1]
 		
+	# Skip to the first frame
+	video.set(1,args.start)
 
+	# Load the frames into memory and apply spatial gaussian filter
+	for i in range(clip_length):
+		frame_available, frame = video.read()
+		if not frame_available:
+			break
+
+		if args.width > 0 and args.height > 0:
+			gs_frame = cv2.resize(cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY),(args.height,args.width))
+			clip_st.width = args.width
+			clip_st.height = args.height
+			
+		gs_frame = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+		clip[:,:,i] = cv2.GaussianBlur(gs_frame,(0,0),args.sigma)
+	
+	# 1D temporal Gabor filters 
+	t = np.arange(-2*(args.tau**2),2*(args.tau**2))
+	w = 4. / args.tau
+	heven= -np.cos(2*np.pi*t*w)*np.exp(-np.square(t)/(args.tau**2))
+	hodd = -np.sin(2*np.pi*t*w)*np.exp(-np.square(t)/(args.tau**2))
+
+	# Convolve along time dimension, note that using 'nearest' avoids high
+	# values of R along the beginning/end of the clip
+	print "Starting even convolution..."
+	even = scipy.ndimage.convolve1d(clip,heven,axis=2,mode='nearest',origin=0)
+	print "done."
+	print "Starting odd convolution..."
+	odd = scipy.ndimage.convolve1d(clip,hodd,axis=2,mode='nearest',origin=0)
+	print "done."
+	
+	# R is the response function for spatial temporal interest. The local
+	# maxima of R are used as a sparse representation of the video clip
+	R = np.square(even) + np.square(odd)
+
+	# Option to save a video of the response function (for debugging)
+	if args.save_R:
+		dirname = 'R-%s'%time.strftime("%d-%m-%y-%H-%M")
+		os.makedirs(dirname)
+		for i in range(clip_length):
+			plt.figure()
+			plt.imshow(R[:,:,i])
+			plt.savefig(os.path.join(dirname,'frame-%0d.png'%i))
+
+	# Now we need to find the local maxima of the response function to identify
+	# spatial-temporal points of interest
+	interest_points = np.array(detect_local_maxima(R))
+	
+	# Sort by time for easier display in video
+	interest_points = interest_points[:,np.argsort(interest_points[2,:])]
+
+	# Save for future use
+	clip_st.interest_points = interest_points
+	save_name = args.filename.split('/')[-1].split('.')[0]+'-%d-%d'%(args.start,args.end)+'.pkl'
+	clip_st.save(save_name)
+
+
+if __name__ == "__main__":
+	main()
