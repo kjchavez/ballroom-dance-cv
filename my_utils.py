@@ -3,7 +3,6 @@ import scipy.ndimage.filters as filters
 import scipy.ndimage.morphology as morphology
 
 def detect_local_maxima(arr):
-	# radius is (dx,dy,dt)
     # http://stackoverflow.com/questions/3684484/peak-detection-in-a-2d-array/3689710#3689710
     """
     Takes an array and RADIUS and detects the troughs using the local maximum filter.
@@ -13,8 +12,7 @@ def detect_local_maxima(arr):
     # define an connected neighborhood
     # http://www.scipy.org/doc/api_docs/SciPy.ndimage.morphology.html#generate_binary_structure
     neighborhood = morphology.generate_binary_structure(len(arr.shape),2)
-    #neighborhood = np.ones(radius)
-    #print neighborhood
+
     # apply the local maximum filter; all locations of maximum value 
     # in their neighborhood are set to 1
     # http://www.scipy.org/doc/api_docs/SciPy.ndimage.filters.html#maximum_filter
