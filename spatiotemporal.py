@@ -1,8 +1,23 @@
+"""
+	Extracts interesting spatio-temporal points from a video clip and
+	generates gradient vector descriptors. These descriptors and other
+	meta-information about the source of the video clip are then pickled
+	and saved to file.
+
+	Author: Kevin Chavez
+"""
 import sys, os, time
+
+# For data processing
 import numpy as np
 import scipy.ndimage
+from sklearn.decomposition import PCA
 import cv2
+
+# To generate heat maps of the response function
 import matplotlib.pyplot as plt
+
+# Other utilities
 from my_utils import *
 import cPickle
 import argparse
@@ -23,6 +38,29 @@ class ClipST(object):
 			clip = cPickle.load(fid)
 		return clip
 
+def generate_descriptors(clip,interest_points,delta_x,delta_y,delta_t,smoothing_scales=[2,4,8]):
+	descriptors = np.zeros((len(smoothing_scales)*3*(2*delta_x+1)*(2*delta_y+1)*(2*delta_t+1),interest_points.shape[1]))
+	for i in xrange(interest_points.shape[1]):
+		x,y,t = interest_points[:,i]
+		spatial_temporal_cube = clip[x-delta_x:x+delta_x+1,y-delta_y:y+delta_y+1,t-delta_t:t+delta_t+1]
+		descriptor = np.zeros((len(smoothing_scales)*3*spatial_temporal_cube.size))
+		for n,sigma in enumerate(smoothing_scales):
+			# Filter and find gradients
+			smoothed_cube = scipy.ndimage.filters.gaussian_filter(spatial_temporal_cube,sigma)
+			dx,dy,dt = np.gradient(smoothed_cube)
+			
+			# The index in the descriptor where the section corresponding to this filter starts
+			filter_start_idx = n*3*spatial_temporal_cube.size
+
+			# Assign gradients along each axis to the appropriate dimensions of the descriptor
+			descriptor[filter_start_idx+0:filter_start_idx+spatial_temporal_cube.size] = dx.flatten()
+			descriptor[filter_start_idx+spatial_temporal_cube.size:filter_start_idx+2*spatial_temporal_cube.size] = dy.flatten()
+			descriptor[filter_start_idx+2*spatial_temporal_cube.size:filter_start_idx+3*spatial_temporal_cube.size] = dt.flatten()
+
+		descriptors[:,i] = descriptor
+
+	return descriptors
+	
 def main():
 	parser = argparse.ArgumentParser(description='Collect spatial-temporal interest points for a clip')
 	parser.add_argument('filename', metavar='F', type=str,
@@ -121,6 +159,11 @@ def main():
 	save_name = args.filename.split('/')[-1].split('.')[0]+'-%d-%d'%(args.start,args.end)+'.pkl'
 	clip_st.save(save_name)
 
-
+def test_descriptors():
+	cube = np.random.randint(1,200,(10,10,10))
+	interest_points = np.array([[5,5,5],[2,2,2]]).T
+	descriptors = generate_descriptors(cube,interest_points,1,1,1)
+	
+	
 if __name__ == "__main__":
-	main()
+	test_descriptors()
