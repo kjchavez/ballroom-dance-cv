@@ -6,7 +6,7 @@
 """
 import cv2
 import numpy as np
-from spatiotemporal import ClipST
+from spatiotemporal import ClipAnalysis
 import os
 import argparse
 import cPickle
@@ -28,10 +28,10 @@ def main():
 
 	# Extend the set of interest points to display rectangles for a longer
 	# time
-	interest_points = clip_st.interest_points
+	interest_points = clip_st.interest_points[:,np.argsort(clip_st.interest_points[2,:])]
 	clip_length = clip_st.end_frame - clip_st.start_frame 
 
-	print interest_points
+	print "interest point shape:",interest_points.shape
 	clip = np.zeros((clip_st.width,clip_st.height,clip_length))
 	print clip.shape
 	for i in range(clip_length):
