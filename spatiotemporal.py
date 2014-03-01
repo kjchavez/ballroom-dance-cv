@@ -184,25 +184,25 @@ def main():
 	delta_x = args.sigma
 	delta_y = args.sigma
 	delta_t = 5
-	print interest_points.shape
+
 	close_to_boundary_x = scipy.logical_or(interest_points[0,:] - delta_x < 0,interest_points[0,:] + delta_x >= clip.shape[0])
 	close_to_boundary_y = scipy.logical_or(interest_points[1,:] - delta_y < 0,interest_points[1,:] + delta_y >= clip.shape[1])
 	close_to_boundary_t = scipy.logical_or(interest_points[2,:] - delta_t < 0,interest_points[2,:] + delta_t >= clip.shape[2])
 	ignore = scipy.logical_or(scipy.logical_or(close_to_boundary_x,close_to_boundary_y),close_to_boundary_t)
 	interest_points = interest_points[:,scipy.logical_not(ignore)]
-	print interest_points.shape, "after"
 
+	print "Found %d interesting spatial-temporal points" % interest_points.shape[1]
 	# Save the clip analysis data structure.
 	if not os.path.isdir('AnalyzedClips'):
 		os.makedirs('AnalyzedClips')
 	
 	clip_analysis.interest_points = interest_points
-	print interest_points.shape
+	print "Generating descriptors..."
 	descriptors = generate_descriptors(original_clip,interest_points,delta_x,delta_y,delta_t)
 	filename = args.filename.split('/')[-1].split('.')[0]+'-%d-%d'%(args.start,args.end)
 	clip_analysis.save(os.path.join('AnalyzedClips',filename)+".pkl")
 
-	with open(os.path.join('AnalyzedClips',filename+"-descriptors.pkl")) as fid:
+	with open(os.path.join('AnalyzedClips',filename+"-descriptors.pkl"),'w') as fid:
 		cPickle.dump(descriptors,fid)
 		
 
@@ -212,17 +212,8 @@ def main():
 	with open(os.path.join('AnalyzedClips','targets.txt'),'a') as fid:
 		fid.write(filename+' '+args.target.lower()+'\n')
 
-def test_descriptors():
-	cube = np.random.randint(1,200,(10,10,10))
-	interest_points = np.array([[5,5,5],[2,2,2],[3,3,4]]).T
-	descriptors = generate_descriptors(cube,interest_points,1,1,1)
+	print "...saved."
 
-	# Apply PCA
-	pca = PCA(n_components=2)
-	x = pca.fit_transform(descriptors.T)
-	print x
-	print pca.components_
-	print(pca.explained_variance_ratio_) 
 	
 if __name__ == "__main__":
 	main()
