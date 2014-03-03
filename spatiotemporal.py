@@ -71,7 +71,7 @@ def generate_descriptors(clip,interest_points,delta_x,delta_y,delta_t,smoothing_
 	
 def main():
 	parser = argparse.ArgumentParser(description='Collect spatial-temporal interest points for a clip')
-	parser.add_argument('-o','--sigma', metavar='O', type=int,
+	parser.add_argument('-o','--sigma', metavar='O', type=float,
 					   help='spatial convolution scale',default=4)
 	parser.add_argument('--tau','-t', metavar='T', type=float,
 					   help='temporal convolution scale',default=16.)
@@ -81,6 +81,7 @@ def main():
 					   help='force height of video',default=-1)
 	parser.add_argument('-r','--save-R',dest='save_R',action='store_true',
 					   help='save a video of the response function',default=False)
+	parser.add_argument('--destination', '-d', type=str, default="AnalyzedClips")
 	parser.add_argument('filename', metavar='F', type=str,
 					   help='video filename (avi, mp4 format)')
 	parser.add_argument('start', metavar='S', type=int,
@@ -92,12 +93,12 @@ def main():
 	args = parser.parse_args()
 
 	# Check if this clip has already been analyzed
-	if not os.path.isdir('AnalyzedClips'):
-		os.makedirs('AnalyzedClips')
+	if not os.path.isdir(args.destination):
+		os.makedirs(args.destination)
 		
 	filename = args.filename.split('/')[-1].split('.')[0]+'-%d-%d'%(args.start,args.end)+'.pkl'
 	try:
-		with open(os.path.join('AnalyzedClips','clips.txt'),'r') as fid:
+		with open(os.path.join(args.destination,'clips.txt'),'r') as fid:
 			if filename+'\n' in fid.readlines():
 				run = raw_input("This clip has already been analyzed... Run anyway? (y/n)")
 				if run != 'y':
@@ -144,7 +145,7 @@ def main():
 		original_clip[:,:,i] = gs_frame
 	
 	# 1D temporal Gabor filters 
-	t = np.arange(-int(clip_length/4),int(clip_length/4))
+	t = np.arange(-30,30)
 	w = 4. / args.tau
 	heven= -np.cos(2*np.pi*t*w)*np.exp(-np.square(t)/(args.tau**2))
 	hodd = -np.sin(2*np.pi*t*w)*np.exp(-np.square(t)/(args.tau**2))
@@ -181,8 +182,8 @@ def main():
 
 	# What do we do with points near the boundary of the spatio-temporal cube?
 	# For now, ignore them. Shouldn't be critical to the classification
-	delta_x = args.sigma
-	delta_y = args.sigma
+	delta_x = int(3*args.sigma)
+	delta_y = int(3*args.sigma)
 	delta_t = 5
 
 	close_to_boundary_x = scipy.logical_or(interest_points[0,:] - delta_x < 0,interest_points[0,:] + delta_x >= clip.shape[0])
@@ -193,23 +194,23 @@ def main():
 
 	print "Found %d interesting spatial-temporal points" % interest_points.shape[1]
 	# Save the clip analysis data structure.
-	if not os.path.isdir('AnalyzedClips'):
-		os.makedirs('AnalyzedClips')
+	if not os.path.isdir(args.destination):
+		os.makedirs(args.destination)
 	
 	clip_analysis.interest_points = interest_points
 	print "Generating descriptors..."
 	descriptors = generate_descriptors(original_clip,interest_points,delta_x,delta_y,delta_t)
 	filename = args.filename.split('/')[-1].split('.')[0]+'-%d-%d'%(args.start,args.end)
-	clip_analysis.save(os.path.join('AnalyzedClips',filename)+".pkl")
+	clip_analysis.save(os.path.join(args.destination,filename)+".pkl")
 
-	with open(os.path.join('AnalyzedClips',filename+"-descriptors.pkl"),'w') as fid:
+	with open(os.path.join(args.destination,filename+"-descriptors.pkl"),'w') as fid:
 		cPickle.dump(descriptors,fid)
 		
 
 	# Update the list of analyzed clips
-	with open(os.path.join('AnalyzedClips','clips.txt'),'a') as fid:
+	with open(os.path.join(args.destination,'clips.txt'),'a') as fid:
 		fid.write(filename+'\n')
-	with open(os.path.join('AnalyzedClips','targets.txt'),'a') as fid:
+	with open(os.path.join(args.destination,'targets.txt'),'a') as fid:
 		fid.write(filename+' '+args.target.lower()+'\n')
 
 	print "...saved."

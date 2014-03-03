@@ -45,6 +45,7 @@ def main():
 	max_x = clip.shape[0]-1
 	max_y = clip.shape[1]-1
 	thickness = 2
+	clip_st.sigma = int(3*clip_st.sigma)
 	print "Drawing rectangles..."
 	for i in range(clip_length):
 		while(tracker < interest_points.shape[1] and interest_points[2,tracker] == i):
