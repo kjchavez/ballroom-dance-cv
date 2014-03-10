@@ -19,16 +19,15 @@
 
 import os,sys
 import time
-#from multiprocessing import Pool
 import subprocess
 import argparse
 
-def analyze_clip(video_file, start, end, target, dest, sigma=6, tau=12,descriptor_smoothing=[2,4,8]):
+def analyze_clip(video_file, start, end, target, dest, datafile="data",sigma=6, tau=12,descriptor_smoothing=[2,4,8]):
 	subprocess.call(["python", "spatiotemporal.py","--sigma",str(sigma),"--tau",str(tau), \
-					"--destination", dest, os.path.join('../Dataset',video_file),str(start),str(end),target])
+					"--smoothing",str(descriptor_smoothing[0]),str(descriptor_smoothing[1]),\
+					str(descriptor_smoothing[2]), "--destination", dest, "--datafile",datafile,\
+					video_file,str(start),str(end),target])
 
-	out_file = video_file.split('/')[-1].split('.')[0]+'-%d-%d'%(start,end)+'.pkl'
-	out_file = os.path.join(dest,out_file)
 
 def wrapper(x):
 	analyze_clip(x[0],x[1],x[2],x[3])
@@ -37,25 +36,32 @@ def wrapper(x):
 def main():
 	parser = argparse.ArgumentParser(description='Analyze spatiotemporal interest points for a set of clips')
 	parser.add_argument('inputfile',type=str)
-	parser.add_argument('-o','--sigma', metavar='O', type=int,
+	parser.add_argument('-o','--sigma', metavar='O', type=float,
 					   help='spatial convolution scale',default=2.0)
 	parser.add_argument('--tau','-t', metavar='T', type=float,
-					   help='temporal convolution scale',default=15.0)
-	parser.add_argument('--destination','-d',type=str,default="")
+					   help='temporal convolution scale',default=3.0)
+	parser.add_argument('--smoothing','-s', type=float,nargs=3,default=[1,2,3])
+	parser.add_argument('--fps',type=int,default=30)
+	parser.add_argument('--destination','-d',type=str,default="",help="Folder to save results in")
+	parser.add_argument('--datafile',type=str,default="data",help="hdf5 file to save descriptors")
 	
 	sysargs = parser.parse_args()
 
 	# Make directory to store results
 	if not sysargs.destination:
-		sysargs.destination = "AnalyzedClips-%s" %  time.strftime("%d-%m-%y-%H-%M")
+		sysargs.destination = "Results-%s-%s" %  (sysargs.inputfile.split('.')[0].split('/')[-1],time.strftime("%d-%m-%y-%H-%M"))
 
-	if os.path.isdir(sysargs.destination):
-		print "Directory already exists. Cannot write data."
+	if os.path.isfile(os.path.join(sysargs.destination,sysargs.datafile+'.hdf5')):
+		print "Data file already exists. Exiting..."
 		sys.exit()
-		
-	os.makedirs(sysargs.destination)
 
-	fps = 30
+	if not os.path.isdir(sysargs.destination):	
+		print "Creating directory %s..." % sysargs.destination
+		os.makedirs(sysargs.destination)
+	else:
+		print "Saving to %s..." % sysargs.destination
+
+	fps = sysargs.fps
 	input_file = sysargs.inputfile
 	args = []
 	with open(input_file,'r') as fid:
@@ -65,14 +71,15 @@ def main():
 			end = int(end.split(':')[0])*60*fps+int(end.split(':')[1])*fps
 			args.append((videofile,start,end,target,sysargs.destination))
 
-	with open(os.path.join(sysargs.destination,'settings.txt'),'w') as fid:
+	with open(os.path.join(sysargs.destination,sysargs.datafile+'-settings.txt'),'w') as fid:
 		fid.write("tau: %f\n" % sysargs.tau)
 		fid.write("sigma: %f\n" % sysargs.sigma)
+		fid.write("smoothing: %f %f %f\n" % tuple(sysargs.smoothing))
 
 	# Don't have the memory to run multiple processes... bummer
 	for arg in args:
 		print "Analyzing", arg
-		analyze_clip(*arg,sigma=sysargs.sigma,tau=sysargs.tau)
+		analyze_clip(*arg,sigma=sysargs.sigma,tau=sysargs.tau,descriptor_smoothing=sysargs.smoothing,datafile=sysargs.datafile)
 		
 	print "all done"
 	

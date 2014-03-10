@@ -13,7 +13,7 @@
 
 		3.	Run K-means to generate 'codebook_size' spatial-temporal codewords
 """
-import sys, os
+import os
 import cPickle
 import argparse
 import time
@@ -23,6 +23,7 @@ import numpy as np
 from sklearn.decomposition import RandomizedPCA
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
+import h5py
 
 def main():
 	parser = argparse.ArgumentParser(description='Generate codebook from set of descriptors')
@@ -32,42 +33,43 @@ def main():
 					   help='Reduced dimensionality of descriptors',default=100)
 	parser.add_argument('codebook_size', metavar='S', type=int,
 					   help='How many codewords to create',default=500)
+	parser.add_argument('num_videos',type=int,default=12,help="How many of the videos in the file to use for codebook generation.")
 	parser.add_argument('-v','--visualize', dest='visualize', action='store_true',
 					   help='generate plots?',default=False)
+
+	parser.add_argument('--pca-model',dest='pca_model',default=None,type=str)
 
 
 	args = parser.parse_args()
 
-	path = "/".join(args.filename.split('/')[:-1])
+	path = '/'.join(args.filename.split('/')[:-1])
+
 	
 	# Create a folder to save results
-	save_path = os.path.join(path,"Models-%s"%time.strftime("%d-%m-%y-%H-%M"))
+	save_path = os.path.join(path,"Models-%d-%d"%(args.pca_k,args.codebook_size))
 	os.makedirs(save_path)
 
-	descriptors = []
 	lengths = []
 	print "Loading descriptors..."
-	with open(args.filename,'r') as fid:
-		for clip_file in fid:
-			clip_file = clip_file[:-1]+'-descriptors.pkl'
-			with open(os.path.join(path,clip_file),'r') as clip_fid:
-				subsampled_descriptor = cPickle.load(clip_fid)[::10,:]
-				descriptors.append(subsampled_descriptor)
-				lengths.append(subsampled_descriptor.shape[1])
+	f = h5py.File(args.filename,'r')
+	descriptors = f['descriptors']
 
-	with open(os.path.join(save_path,'video_divisions.pkl'),'w') as fid:
-		cPickle.dump(lengths,fid)	
+	# Choose a subset of descriptors
+	end = sum(descriptors.attrs['lengths'][0:args.num_videos])
+	descriptors = descriptors[:end:3,:]
 
-	print "Stacking all descriptors..."
-	descriptors = scipy.concatenate(descriptors,axis=1).T
-
-	print "Running PCA with %d components..." % args.pca_k
-	pca = RandomizedPCA(n_components = args.pca_k)
-	reduced_descriptors = pca.fit_transform(descriptors)
-	del descriptors # to free some memory
-	with open(os.path.join(save_path,'reduced_descriptors.pkl'),'w') as fid:
-		cPickle.dump(reduced_descriptors,fid)
-
+	if args.pca_model:
+		print "Loading saved PCA model..."
+		with open(args.pca_model,'r') as fid:
+			pca = cPickle.load(fid)
+		reduced_descriptors = pca.transform(descriptors)
+	else:
+		print "Running PCA with %d components..." % args.pca_k
+		pca = RandomizedPCA(n_components = args.pca_k)
+		reduced_descriptors = pca.fit_transform(descriptors)
+		
+	f.close()
+	
 	print "Saving PCA model..."
 	with open(os.path.join(save_path,"pca.pkl"),'w') as fid:
 		cPickle.dump(pca,fid)	
@@ -86,10 +88,7 @@ def main():
 		
 	print "Running KMeans with %d cluster centroids..." %args.codebook_size
 	km = KMeans(n_clusters=args.codebook_size)
-	predicted_codewords = km.fit_predict(reduced_descriptors)
-	with open(os.path.join(save_path,'codeword_membership.pkl'),'w') as fid:
-		cPickle.dump(predicted_codewords,fid)
-		
+	km.fit(reduced_descriptors)
 	print "Clustering Inertia:",km.inertia_
 	print "Saving KMeans model..."
 	with open(os.path.join(save_path,"kmeans.pkl"),'w') as fid:
